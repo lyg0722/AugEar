@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="cnsl.augear" >
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+
+    <!-- USB -->
+    <uses-feature android:name="android.hardware.usb.host" />
+    <!-- USB-->
 
     <application
         android:allowBackup="true"
@@ -12,8 +18,16 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
+                <!-- USB-->
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"/>
+                <!-- USB-->
+
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- USB-->
+            <meta-data android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/device_filter"/>
+            <!-- USB, Don't forget to remove res/xml/ -->
         </activity>
     </application>
 
