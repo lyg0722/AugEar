@@ -17,8 +17,8 @@ import android.widget.LinearLayout;
 import java.io.File;
 import java.io.IOException;
 
-import edu.cmu.pocketsphinx.SpeechRecognizer;
-import edu.cmu.pocketsphinx.SpeechRecognizerSetup;
+import edu.cmu.sphinx.api.Configuration;
+import edu.cmu.sphinx.api.StreamSpeechRecognizer;
 
 public class MainActivity extends AppCompatActivity {
 //    private int source1 = MediaRecorder.AudioSource.MIC;
@@ -166,6 +166,7 @@ public class MainActivity extends AppCompatActivity {
     public MainActivity() {
         mFileName = Environment.getExternalStorageDirectory().getPath();
         mFileName += "/audiorecordtest.wav";
+
     }
 
     @Override

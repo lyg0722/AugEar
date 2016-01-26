@@ -85,7 +85,10 @@
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="library" exported="" name="pocketsphinx-android-5prealpha-nolib" level="project" />
     <orderEntry type="library" exported="" name="support-v4-23.1.1" level="project" />
+    <orderEntry type="library" exported="" name="commons-math3-3.2" level="project" />
+    <orderEntry type="library" exported="" name="sphinx4-core-5prealpha-SNAPSHOT" level="project" />
     <orderEntry type="library" exported="" name="support-annotations-23.1.1" level="project" />
+    <orderEntry type="library" exported="" name="sphinx4-data-5prealpha-SNAPSHOT" level="project" />
     <orderEntry type="library" exported="" name="appcompat-v7-23.1.1" level="project" />
   </component>
 </module>
