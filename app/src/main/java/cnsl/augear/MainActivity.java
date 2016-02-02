@@ -1,206 +1,210 @@
 package cnsl.augear;
 
+import android.app.PendingIntent;
+import android.content.BroadcastReceiver;
 import android.content.Context;
-import android.media.MediaPlayer;
-import android.media.MediaRecorder;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.hardware.usb.UsbDevice;
+import android.hardware.usb.UsbManager;
+import android.media.AudioDeviceInfo;
+import android.media.AudioManager;
 import android.media.AudioRecord;
-import android.os.CountDownTimer;
 import android.os.Environment;
-import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.view.View;
-import android.view.ViewGroup;
-import android.widget.Button;
-import android.widget.LinearLayout;
+import android.widget.TextView;
 
-import java.io.File;
-import java.io.IOException;
-
-import edu.cmu.sphinx.api.Configuration;
-import edu.cmu.sphinx.api.StreamSpeechRecognizer;
+import java.util.HashMap;
+import java.util.Iterator;
 
 public class MainActivity extends AppCompatActivity {
-//    private int source1 = MediaRecorder.AudioSource.MIC;
-//
-//    private AudioRecord aRecorder = null;
-//
-//    @Override
-//    protected void onCreate(Bundle savedInstanceState) {
-//        super.onCreate(savedInstanceState);
-//        setContentView(R.layout.main);
-//
-//        int buffersize = AudioRecord.getMinBufferSize(Constants.REC1_SAMPLERATE, Constants.REC1_CHANNELS, Constants.REC1_ENCODING);
-//
-//        aRecorder = new AudioRecord(Constants.REC1_SOURCE, Constants.REC1_SAMPLERATE, Constants.REC1_CHANNELS, Constants.REC1_ENCODING, buffersize);
-//
-//        aRecorder.startRecording();
-//        boolean isRecording = true;
-//
-//        Log.i(this.getClass().getName(), "this is log");
-//    }
-
-    private CountDownTimer timer;
-
     private static final String LOG_TAG = "AudioRecordTest";
-    private static String mFileName = null;
 
-    private RecordButton mRecordButton = null;
-    private MediaRecorder mRecorder = null;
+    private TextView mRecordButton = null;
+    private TimerRecorder mRecorder = null;
+    private boolean mRecorder_onAir = false;
+    private int const_count = 0;
 
-    private PlayButton   mPlayButton = null;
-    private MediaPlayer mPlayer = null;
-
-    private void onRecord(boolean start) {
-        if (start) {
-            startRecording();
-        } else {
-            stopRecording();
-        }
-    }
-
-    private void onPlay(boolean start) {
-        if (start) {
-            startPlaying();
-        } else {
-            stopPlaying();
-        }
-    }
-
-    private void startPlaying() {
-        mPlayer = new MediaPlayer();
-        try {
-            mPlayer.setDataSource(mFileName);
-            mPlayer.prepare();
-            mPlayer.start();
-        } catch (IOException e) {
-            Log.e(LOG_TAG, "prepare() failed");
-        }
-    }
-
-    private void stopPlaying() {
-        mPlayer.release();
-        mPlayer = null;
-    }
-
-    private void startRecording() {
-        mRecorder = new MediaRecorder();
-        mRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
-        mRecorder.setOutputFormat(MediaRecorder.OutputFormat.DEFAULT);
-        mRecorder.setOutputFile(mFileName);
-        mRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB);
-
-
-
-        try {
-            mRecorder.prepare();
-        } catch (IOException e) {
-            Log.e(LOG_TAG, "prepare() failed");
-        }
-
-        mRecorder.start();
-
-        timer = new CountDownTimer(Constants.RECORD_TIME, Constants.RECORD_TIME-1) {
-            @Override
-            public void onTick(long millisUntilFinished) {}
-
-            @Override
-            public void onFinish() {
-                stopRecording();
-            }
-        };
-    }
-
-    private void stopRecording() {
-        mRecorder.stop();
-        mRecorder.release();
-        mRecorder = null;
-    }
-
-    class RecordButton extends Button {
-        boolean mStartRecording = true;
-
-        OnClickListener clicker = new OnClickListener() {
-            public void onClick(View v) {
-                onRecord(mStartRecording);
-                if (mStartRecording) {
-                    setText("Stop recording");
-                } else {
-                    setText("Start recording");
-                }
-                mStartRecording = !mStartRecording;
-            }
-        };
-
-        public RecordButton(Context ctx) {
-            super(ctx);
-            setText("Start recording");
-            setOnClickListener(clicker);
-        }
-    }
-
-    class PlayButton extends Button {
-        boolean mStartPlaying = true;
-
-        OnClickListener clicker = new OnClickListener() {
-            public void onClick(View v) {
-                onPlay(mStartPlaying);
-                if (mStartPlaying) {
-                    setText("Stop playing");
-                } else {
-                    setText("Start playing");
-                }
-                mStartPlaying = !mStartPlaying;
-            }
-        };
-
-        public PlayButton(Context ctx) {
-            super(ctx);
-            setText("Start playing");
-            setOnClickListener(clicker);
-        }
-    }
-
-
-
-    public MainActivity() {
-        mFileName = Environment.getExternalStorageDirectory().getPath();
-        mFileName += "/audiorecordtest.wav";
-
-    }
 
     @Override
     public void onCreate(Bundle icicle) {
         super.onCreate(icicle);
+        this.setContentView(R.layout.main);
+
+        String fileRoot = Environment.getExternalStorageDirectory().getPath();
+        Log.i(LOG_TAG, "file name: "+fileRoot);
+
+        mRecorder = new TimerRecorder(fileRoot);
+
+        mRecordButton = (TextView) findViewById(R.id.btn1);
+        mRecordButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (mRecorder_onAir) {
+                    mRecordButton.setText("START RECOGNITION");
+                    onRecord(mRecorder_onAir, mRecorder);
+                    mRecorder = null;
+                } else {
+                    onRecord(mRecorder_onAir, mRecorder);
+                    mRecordButton.setText("STOP RECOGNITION");
+                }
+                mRecorder_onAir = !mRecorder_onAir;
+            }
+        });
 
 
-        LinearLayout ll = new LinearLayout(this);
-        mRecordButton = new RecordButton(this);
-        ll.addView(mRecordButton,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        0));
-        mPlayButton = new PlayButton(this);
-        ll.addView(mPlayButton,
-                new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        ViewGroup.LayoutParams.WRAP_CONTENT,
-                        0));
-        setContentView(ll);
+
+
+//        ConfigurationManager cm = new ConfigurationManager();
+//        FrontEnd fe = new FrontEnd();
+//        StreamDataSource dataSource = new StreamDataSource(44100, );        // need to be specified
+//        dataSource.setInputStream(innerRecorder);          // this is wrong. need to be changed.
+//        fe.setDataSource(dataSource);                  // substitute mic to audio file
+//
+//        fe.getData();                           // output of the front end
+//
+//        try {
+//            FeatureFileDumper extractor = new FeatureFileDumper(cm, fe.getName());
+//        } catch (IOException e) {
+//            e.printStackTrace();
+//        }
+
+//        // USB Things
+//        UsbManager mUsbManager = (UsbManager) getSystemService(this.USB_SERVICE);
+//        HashMap<String, UsbDevice> devlist = mUsbManager.getDeviceList();
+//        Iterator<UsbDevice> devIter = devlist.values().iterator();
+//
+//        PendingIntent mPermissionIntent = PendingIntent.getBroadcast(this, 0, new Intent(ACTION_USB_PERMISSION), 0);
+//        IntentFilter filter = new IntentFilter(ACTION_USB_PERMISSION);
+//        registerReceiver(mUsbReceiver, filter);
+//
+//        UsbDevice mic1 = null;
+//        UsbDevice mic2 = null;
+//        UsbDevice mouse = null;
+//
+//        while (devIter.hasNext()){
+//            UsbDevice device = devIter.next();
+//            int deviceId = device.getDeviceId();
+//            if(deviceId == 1005) mic1 = device;
+//            else if(deviceId == 1006) mic2 = device;
+//            else mouse = device;
+//
+//            Log.i(LOG_TAG,"devId="+device.getDeviceId()+" / devName="+device.getDeviceName()+" / prodId="+device.getProductId()+" / prodName="+device.getProductName());
+//        }
+//        Log.i(LOG_TAG, "mic1 class"+mic1.getDeviceClass());
+//        Log.i(LOG_TAG, "mic1 protocol"+mic1.getDeviceProtocol());
+//        Log.i(LOG_TAG, "mic1 interface count"+mic1.getInterfaceCount());
+//        Log.i(LOG_TAG, "mic2 "+mic2.getDeviceId());
+//
+//
+//        mUsbManager.requestPermission(mic1, mPermissionIntent);
+//        mUsbManager.requestPermission(mic2, mPermissionIntent);
+//        mUsbManager.requestPermission(mouse, mPermissionIntent);
+//
+//
+//        byte[] bytes = {0,1,2,3,4};
+//        int TIMEOUT = 0;
+//        boolean forceClaim = true;
+//
+//        UsbInterface mic1_Interface = mic1.getInterface(2);
+//        UsbInterface mic2_Interface = mic2.getInterface(2);
+//        UsbInterface mouse_Interface = mic2.getInterface(2);
+//
+//        StringBuilder builder = new StringBuilder();
+//        for (int i=0; i<mic1.getInterfaceCount(); i++)
+//        {
+//            String epDirString = "No endpoints";
+//            String epTypeString = "No endpoints";
+//
+//            if (mic1.getInterface(i).getEndpointCount() > 0)
+//            {
+//                epDirString = String.valueOf(mic1.getInterface(i).getEndpoint(0).getDirection());
+//                epTypeString = String.valueOf(mic1.getInterface(i).getEndpoint(0).getType());
+//            }
+//
+//            builder.append("Int. " + i + " EP count: " + mic1.getInterface(i).getEndpointCount() +
+//                    " || EP direction: " + epDirString + " || EP type: " + epTypeString + "\n");
+//
+//        }
+//        Log.i(LOG_TAG, builder.toString());
+//        StringBuilder builder2 = new StringBuilder();
+//        for (int i=0; i<mouse.getInterfaceCount(); i++)
+//        {
+//            String epDirString = "No endpoints";
+//            String epTypeString = "No endpoints";
+//
+//            if (mic1.getInterface(i).getEndpointCount() > 0)
+//            {
+//                epDirString = String.valueOf(mic1.getInterface(i).getEndpoint(0).getDirection());
+//                epTypeString = String.valueOf(mic1.getInterface(i).getEndpoint(0).getType());
+//            }
+//
+//            builder2.append("Int. " + i + " EP count: " + mic1.getInterface(i).getEndpointCount() +
+//                    " || EP direction: " + epDirString + " || EP type: " + epTypeString + "\n");
+//
+//        }
+//        Log.i(LOG_TAG, builder2.toString());
+//
+//        UsbEndpoint mic1_EndpointFromMic = mic1_Interface.getEndpoint(0);
+//        UsbEndpoint mic2_EndpointFromMic = mic2_Interface.getEndpoint(0);
+//
+//        UsbDeviceConnection mic1_Connection = mUsbManager.openDevice(mic1);
+//        UsbDeviceConnection mic2_Connection = mUsbManager.openDevice(mic2);
+//
+//        mic1_Connection.claimInterface(mic1_Interface, forceClaim);
+//        mic2_Connection.claimInterface(mic2_Interface, forceClaim);
+//
+//        UsbRequest requestRecord = new UsbRequest();
+//        requestRecord.initialize(mic1_Connection, mic1_EndpointFromMic);
+//
+//        mic1_Connection.bulkTransfer(mic1_EndpointFromMic, bytes, bytes.length, TIMEOUT); //do in another thread
+//        mic2_Connection.bulkTransfer(mic2_Endpoint, bytes, bytes.length, TIMEOUT); //do in another thread
+//
+        // USB Things
     }
 
     @Override
     public void onPause() {
         super.onPause();
         if (mRecorder != null) {
-            mRecorder.release();
-            mRecorder = null;
-        }
-
-        if (mPlayer != null) {
-            mPlayer.release();
-            mPlayer = null;
+            mRecorder.stopRecording();
         }
     }
+
+    private void onRecord(boolean start, TimerRecorder mRecorder) {
+        if (!start) {
+            mRecorder.startRecordingToFile();
+        } else {
+            mRecorder.stopRecording();
+        }
+    }
+
+    // USB Permission
+    private static final String ACTION_USB_PERMISSION =
+            "com.android.example.USB_PERMISSION";
+    private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
+
+        public void onReceive(Context context, Intent intent) {
+            String action = intent.getAction();
+            if (ACTION_USB_PERMISSION.equals(action)) {
+                synchronized (this) {
+                    UsbDevice device = (UsbDevice)intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
+
+                    if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
+                        if(device != null){
+                            //call method to set up device communication
+                        }
+                    }
+                    else {
+                        Log.d(LOG_TAG, "permission denied for device " + device);
+                    }
+                }
+            }
+        }
+    };
+    // USB Permission
+
 }

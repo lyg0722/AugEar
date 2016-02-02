@@ -18,16 +18,8 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 
-                <!-- USB-->
-                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"/>
-                <!-- USB-->
-
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- USB-->
-            <meta-data android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
-                android:resource="@xml/device_filter"/>
-            <!-- USB, Don't forget to remove res/xml/ -->
         </activity>
     </application>
 

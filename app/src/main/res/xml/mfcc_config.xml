@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<config>
+    <component name="mfcFrontEnd" type="edu.cmu.sphinx.frontend.FrontEnd">
+        <propertylist name="pipeline">
+            <item>preemphasizer</item>
+            <item>windower</item>
+            <item>dft</item>
+            <item>melFilterBank</item>
+            <item>dct</item>
+            <item>batchCMN</item>
+            <item>featureExtractor</item>
+        </propertylist>
+    </component>
+
+    <component name="preemphasizer" type="edu.cmu.sphinx.frontend.filter.Preemphasizer"/>
+    <component name="windower" type="edu.cmu.sphinx.frontend.window.RaisedCosineWindower"/>
+    <component name="dft" type="edu.cmu.sphinx.frontend.transform.DiscreteFourierTransform"/>
+    <component name="melFilterBank" type="edu.cmu.sphinx.frontend.frequencywarp.MelFrequencyFilterBank"/>
+    <component name="dct" type="edu.cmu.sphinx.frontend.transform.DiscreteCosineTransform"/>
+    <component name="batchCMN" type="edu.cmu.sphinx.frontend.feature.BatchCMN"/>
+    <component name="featureExtractor" type="edu.cmu.sphinx.frontend.feature.DeltasFeatureExtractor"/>
+</config>
