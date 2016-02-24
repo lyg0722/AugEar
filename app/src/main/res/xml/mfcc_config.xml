@@ -19,4 +19,8 @@
     <component name="dct" type="edu.cmu.sphinx.frontend.transform.DiscreteCosineTransform"/>
     <component name="batchCMN" type="edu.cmu.sphinx.frontend.feature.BatchCMN"/>
     <component name="featureExtractor" type="edu.cmu.sphinx.frontend.feature.DeltasFeatureExtractor"/>
+
+    <component name="streamDataSource" type="edu.cmu.sphinx.frontend.util.StreamDataSource">
+        <property name="sampleRate" value="44100zc"/>
+    </component>
 </config>

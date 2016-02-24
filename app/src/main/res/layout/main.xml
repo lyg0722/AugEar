@@ -46,11 +46,43 @@
             android:textSize="25dp"
             android:background="#CCCCCC"
             android:id="@+id/btn1"/>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="0px"
+            android:layout_weight="2"
+            android:layout_marginLeft="5dp"
+            android:layout_marginRight="5dp"
+            android:layout_marginTop="2dp"
+            android:gravity="bottom"
+            android:text="Log"
+            android:textSize="12dp"
+            android:scrollbars="vertical"
+
+            android:background="#FFFFFF"
+            android:id="@+id/logview"/>
     </LinearLayout>
-    <ImageView
+    <RelativeLayout
         android:layout_width="0px"
         android:layout_height="match_parent"
-        android:layout_weight="2"
-        android:background="#FF0000"
-        android:id="@+id/rightbox"/>
+        android:layout_weight="2">
+        <ImageView
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#FF0000"
+            android:id="@+id/rightbox"/>
+        <ImageView
+            android:layout_width="30dp"
+            android:layout_height="30dp"
+            android:src="@drawable/refresh_icon"
+            android:layout_alignTop="@id/rightbox"
+            android:layout_alignRight="@id/rightbox"
+            android:id="@+id/refreshicon"/>
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_alignBottom="@id/rightbox"
+            android:text="Mode: None"
+            android:gravity="right"
+            android:id="@+id/mode"/>
+    </RelativeLayout>
 </LinearLayout>
