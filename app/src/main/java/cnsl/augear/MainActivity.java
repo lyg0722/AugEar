@@ -1,14 +1,20 @@
 package cnsl.augear;
 
 import android.app.AlertDialog;
+import android.app.ProgressDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.IntentFilter;
+import android.net.wifi.p2p.WifiP2pConfig;
+import android.net.wifi.p2p.WifiP2pInfo;
 import android.net.wifi.p2p.WifiP2pManager;
+import android.net.wifi.p2p.WifiP2pManager.Channel;
 import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
+import android.os.Message;
 import android.support.v7.app.AppCompatActivity;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
@@ -17,96 +23,59 @@ import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements WifiP2pManager.ConnectionInfoListener {
     private static final String LOG_TAG = "AudioRecordTest";
     private static final int TIMEOUT = 3000;
-    private static final int PORT = 8888;
 
-    private static int MODE_SERVER = 1;
-    private static int MODE_CLIENT = 2;
     private static int MODE = -1;
     private static boolean IS_SERVER_RUNNING = false;
     private static boolean mRecorder_onAir = false;
     private static String logText = "";
+    private static int logLineCount = 0;
     private static TextView mLogView = null;
+    private static boolean isConnectionBusy = false;
+    private static boolean isConnected = false;
 
     private TextView mRecordButton = null;
     private TextView mModeText = null;
     private ImageView mRefreshButton = null;
-//    private Timer mRecorder = null;
     private Recorder mRecorder = null;
     private int const_count = 0;
+    private MainHandler mHandler;
 
     private WifiP2pManager mManager;
-    private WifiP2pManager.Channel mChannel;
+    private Channel mChannel;
     private BroadcastReceiver mReceiver;
     private IntentFilter mIntentFilter;
-
-
-    // USB Things
-//    private UsbManager mUsbManager = null;
-//    private UsbDevice mic1 = null;
-//    private UsbDevice mic2 = null;
-//    private UsbDevice mouse = null;
-//    private UsbEndpoint mic1_Endpoint2 = null;
-//    private UsbEndpoint mic1_Endpoint3 = null;
-//    private UsbEndpoint mic2_EndpointFromMic = null;
-//    private UsbInterface mic1_Interface0 = null;
-//    private UsbInterface mic1_Interface1 = null;
-//    private UsbInterface mic1_Interface2 = null;
-//    private UsbInterface mic1_Interface3 = null;
-//    private UsbInterface mic2_Interface = null;
-//    private UsbDeviceConnection mic1_Connection = null;
-//    private UsbDeviceConnection mic2_Connection = null;
-//
-//    private byte[] receivedByte = null;
-    // USB Things
+    private WifiP2pInfo mConnectionInfo;
+    private String hostAddress;
+    private ProgressDialog progressDialog = null;
 
     @Override
     public void onCreate(Bundle icicle) {
         super.onCreate(icicle);
         this.setContentView(R.layout.main);
 
+        mHandler = new MainHandler(this);
+
         // Log view
         mLogView = (TextView) findViewById(R.id.logview);
         mLogView.setMovementMethod(new ScrollingMovementMethod());
 
-        // Choose mode: server or client
-        mModeText = (TextView)findViewById(R.id.mode);
-
-        DialogInterface.OnClickListener serverClick = new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                MODE = MODE_SERVER;
-                mModeText.setText("SERVER");
-            }
-        };
-        DialogInterface.OnClickListener clientClick = new DialogInterface.OnClickListener() {
-            @Override
-            public void onClick(DialogInterface dialog, int which) {
-                MODE = MODE_CLIENT;
-                mModeText.setText("CLIENT");
-            }
-        };
-
-        AlertDialog.Builder adBuilder = new AlertDialog.Builder(this);
-        adBuilder.setMessage("Choose mode")
-                .setCancelable(false)
-                .setPositiveButton("Server", serverClick)
-                .setNegativeButton("Client", clientClick)
-                .show();
-
         // wifi init.
         mManager = (WifiP2pManager) getSystemService(Context.WIFI_P2P_SERVICE);
         mChannel = mManager.initialize(this, getMainLooper(), null);
-        mReceiver = new WiFiDirectBroadcastReceiver(mManager, mChannel, this);
 
         mIntentFilter = new IntentFilter();
         mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION);
@@ -114,22 +83,56 @@ public class MainActivity extends AppCompatActivity {
         mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION);
         mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
 
-        // recorder init
-//        mRecorder = new Timer();
+        // Choose mode: server or client
+        mModeText = (TextView)findViewById(R.id.mode);
+        DialogInterface.OnClickListener serverClick = new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                MODE = SharedConstants.MODE_SERVER;
+                mModeText.setText("SERVER");
+                if(mReceiver!=null){
+                    ((WiFiDirectBroadcastReceiver)mReceiver).setMode(MODE);
+                }
+            }
+        };
+        DialogInterface.OnClickListener clientClick = new DialogInterface.OnClickListener() {
+            @Override
+            public void onClick(DialogInterface dialog, int which) {
+                MODE = SharedConstants.MODE_CLIENT;
+                mModeText.setText("CLIENT");
+                if(mReceiver!=null){
+                    ((WiFiDirectBroadcastReceiver)mReceiver).setMode(MODE);
+                }
+            }
+        };
+        AlertDialog.Builder adBuilder = new AlertDialog.Builder(this);
+        adBuilder.setMessage("Choose mode")
+                .setCancelable(false)
+                .setPositiveButton("Server", serverClick)
+                .setNegativeButton("Client", clientClick)
+                .show();
 
-        mRecorder = new Recorder();
-        mRecorder.prepare("AugEarTMP");
-
+        // Recorder init
+        mRecorder = new Recorder(mHandler);
         mRecordButton = (TextView) findViewById(R.id.btn1);
         mRecordButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 if (mRecorder_onAir) {
+                    // recording -> stop
+                    mRecorder.stopRecording();
+                    mRecorder = new Recorder(mHandler);
+                    mRecorder.setHostAddress(hostAddress);
                     mRecordButton.setText("START RECOGNITION");
-                    onRecord(mRecorder_onAir, mRecorder);
-                    mRecorder = null;
                 } else {
-                    onRecord(mRecorder_onAir, mRecorder);
+                    // stop -> recording
+                    if(MODE == SharedConstants.MODE_SERVER){
+                        mRecorder.startRecordingToFile("recordTest.wav");
+                    }else if(MODE == SharedConstants.MODE_CLIENT){
+                        mRecorder.startStreaming();
+                    }else{
+                        Toast.makeText(getApplicationContext(), "Need to select mode", Toast.LENGTH_SHORT).show();
+                    }
                     mRecordButton.setText("STOP RECOGNITION");
                 }
                 mRecorder_onAir = !mRecorder_onAir;
@@ -137,26 +140,49 @@ public class MainActivity extends AppCompatActivity {
         });
 
         mRefreshButton = (ImageView) findViewById(R.id.refreshicon);
-
         mRefreshButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 Toast.makeText(MainActivity.this, "Refresh wifi p2p connection", Toast.LENGTH_SHORT).show();
+                if (isConnected) {
+                    MainActivity.log(MainActivity.LOG_TAG, "Step 1-1. Canceling the current connection.");
+                    mManager.removeGroup(mChannel, new WifiP2pManager.ActionListener() {
+                        @Override
+                        public void onSuccess() {
+                            MainActivity.log(MainActivity.LOG_TAG, "Step 1-2. Disconnect and discover.");
+                            isConnected = false;
+                            isConnectionBusy = false;
+                            discoverPeers();
+                        }
 
-                // discovering peers
-                mManager.discoverPeers(mChannel, new WifiP2pManager.ActionListener() {
-                    @Override
-                    public void onSuccess() {
-                        Toast.makeText(MainActivity.this, "Discovery Initiated", Toast.LENGTH_SHORT).show();
-                    }
+                        @Override
+                        public void onFailure(int reason) {
+                            MainActivity.log(MainActivity.LOG_TAG, "Step 1-2. failed to disconnect.");
+                            isConnected = false;
+                            isConnectionBusy = false;
+                        }
+                    });
+//                    mManager.cancelConnect(mChannel, new WifiP2pManager.ActionListener() {
+//                        @Override
+//                        public void onSuccess() {
+//                            MainActivity.log(MainActivity.LOG_TAG, "Disconnect and discover.");
+//                            isConnected = false;
+//                            discoverPeers();
+//                        }
+//                        @Override
+//                        public void onFailure(int reason) {
+//                            MainActivity.log(MainActivity.LOG_TAG, "failed to disconnect.");
+//                        }
+//                    });
+                } else {
+                    MainActivity.log(MainActivity.LOG_TAG, "Step 1. Not connected. Start discovery.");
+                    discoverPeers();
+                }
 
-                    @Override
-                    public void onFailure(int reason) {
-                        Toast.makeText(MainActivity.this, "Discovery failed : " + reason, Toast.LENGTH_SHORT).show();
-                    }
-                });
             }
         });
+
+
 
         // USB Things
 //        mUsbManager = (UsbManager) getSystemService(this.USB_SERVICE);
@@ -247,156 +273,288 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
+        mReceiver = new WiFiDirectBroadcastReceiver(mManager, mChannel, this);
         registerReceiver(mReceiver, mIntentFilter);
     }
 
     @Override
     public void onPause() {
         super.onPause();
-        if (mRecorder != null) {
-            mRecorder.stopRecording();
-        }
         unregisterReceiver(mReceiver);
     }
 
-//    private void onRecord(boolean start, Timer mRecorder) {
-    private void onRecord(boolean start, Recorder mRecorder) {
-        if (!start) {
-            mRecorder.startRecordingToFile();
-        } else {
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (mRecorder != null) {
             mRecorder.stopRecording();
         }
     }
 
-    public void onWifiConnected(){
-        if(MODE == MODE_SERVER){
+    @Override
+    public void onConnectionInfoAvailable(WifiP2pInfo info) {
+        mConnectionInfo = info;
+        isConnected = true;
+
+        if (progressDialog != null && progressDialog.isShowing()) {
+            progressDialog.dismiss();
+        }
+
+        // InetAddress from WifiP2pInfo struct.
+        hostAddress = info.groupOwnerAddress.getHostAddress();
+
+        if (info.groupFormed && info.isGroupOwner) {
+            // server
             if(!IS_SERVER_RUNNING){
-                new ServerAsyncTask(this).execute();
+                MainActivity.log(LOG_TAG, "Step 3. This is server. start serverAsyncTask");
+                new ServerAsyncTask(this, mHandler).execute();
             }
-
-        }
-        else if(MODE == MODE_CLIENT){
-
-        }
-        else{
-            Toast.makeText(this, "Need to select mode", Toast.LENGTH_SHORT).show();
+        } else if (info.groupFormed) {
+            // The other device acts as the client.
+            MainActivity.log(LOG_TAG, "Step 3. This is client. set hostAdress.");
+            mRecorder.setHostAddress(hostAddress);
         }
     }
+
+    private void discoverPeers(){
+        if (progressDialog != null && progressDialog.isShowing()) {
+            progressDialog.dismiss();
+        }
+        progressDialog = ProgressDialog.show(this, "Press back to cancel", "finding peers", true, true);
+
+        mManager.discoverPeers(mChannel, new WifiP2pManager.ActionListener() {
+            @Override
+            public void onSuccess() {
+                Toast.makeText(MainActivity.this, "Step 2. Discovery initiated successfully", Toast.LENGTH_SHORT).show();
+            }
+
+            @Override
+            public void onFailure(int reason) {
+                Toast.makeText(MainActivity.this, "Step 2. Failed to initiate discovery: " + reason, Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    public static void log(String tag, String log){
+        // TODO: logLineCount 이용하여 log 길이 일정하게 유지하기(메모리부족)
+        Log.i(tag, log);
+        logText += "\n" + tag + "   " + log;
+        mLogView.setText(logText);
+    }
+
+    public int getMode(){
+        return MODE;
+    }
+
+    public Handler getHandler(){
+        return mHandler;
+    }
+
 
     /**
      * A simple server socket that accepts connection and writes some data on
      * the stream.
      */
     public static class ServerAsyncTask extends AsyncTask<Void, Void, String> {
-
         private final Context mContext;
+        private Handler mHandler;
 
-        public ServerAsyncTask(Context context) {
-            this.mContext = context;
+        public ServerAsyncTask(Context context, Handler handler) {
+            mContext = context;
+            mHandler = handler;
+            sendMsg("ServerAsyncTask init.");
         }
 
         @Override
         protected String doInBackground(Void... params) {
-            try {
-                ServerSocket serverSocket = new ServerSocket(PORT);
-                Log.d(MainActivity.LOG_TAG, "Server: Socket opened");
-                Socket client = serverSocket.accept();
-                Log.d(MainActivity.LOG_TAG, "Server: connection done");
+            BufferedInputStream tmpInputStream;
+            BufferedOutputStream bOutStream = null;
+            int bufferSize = SharedConstants.CURRENT_BUFFER_SIZE;
+            int audioLen = 0;
+            byte byteBuffer[]  = new byte[bufferSize]; // buffer of buffer
+            String TEMP_FILE_NAME = "temp.bak";
+            String RESULT_FILE_NAME = "result.wav";
+            ServerSocket serverSocket = null;
 
-                InputStream inputstream = client.getInputStream();
-                while(mRecorder_onAir){
-                    MainActivity.log(LOG_TAG, "Input stream --->>> " + inputstream.read());
-                }
-                serverSocket.close();
-                IS_SERVER_RUNNING = false;
-                return null;
-            } catch (IOException e) {
-                Log.e(MainActivity.LOG_TAG, e.getMessage());
-                return null;
+            File waveFile = new File(Environment.getExternalStorageDirectory()+"/"+ RESULT_FILE_NAME);
+            File tempFile = new File(Environment.getExternalStorageDirectory()+"/"+TEMP_FILE_NAME);
+
+            try {
+                bOutStream = new BufferedOutputStream(new FileOutputStream(tempFile));
+            } catch (FileNotFoundException e1) {
+                // TODO Auto-generated catch block
+                e1.printStackTrace();
             }
+
+            if (null != bOutStream) {
+                try {
+                    serverSocket = new ServerSocket(SharedConstants.PORT);
+                    sendMsg("Server: Socket opened");
+                    Socket client = serverSocket.accept();
+                    sendMsg("Server: connection done");
+
+                    InputStream inputstream = client.getInputStream();
+                    BufferedInputStream bIS = new BufferedInputStream(inputstream);
+                    int numBytesRead = 0;
+                    while ((numBytesRead = bIS.read(byteBuffer)) != -1) {
+                        bOutStream.write(byteBuffer, 0, numBytesRead);
+                    }
+                    bOutStream.flush();
+                    bOutStream.close();
+                    inputstream.close();
+                    bIS.close();
+                    audioLen = (int) tempFile.length();
+
+                    byteBuffer  = new byte[bufferSize];
+                    tmpInputStream = new BufferedInputStream(new FileInputStream(tempFile));
+                    bOutStream = new BufferedOutputStream(new FileOutputStream(waveFile));
+                    bOutStream.write(Recorder.getFileHeader(audioLen));
+                    while ((numBytesRead = tmpInputStream.read(byteBuffer)) != -1) {
+                        bOutStream.write(byteBuffer, 0 , numBytesRead);
+                    }
+                    bOutStream.flush();
+                    tmpInputStream.close();
+                    bOutStream.close();
+
+                    sendMsg("file write done.");
+                    serverSocket.close();
+                    IS_SERVER_RUNNING = false;
+                } catch (IOException e) {
+                    try {
+                        if (serverSocket != null) serverSocket.close();
+                        sendMsg("Server: Socket closed");
+                    } catch (IOException e1) {
+                        e1.printStackTrace();
+                    }
+                    IS_SERVER_RUNNING = false;
+                    sendMsg(e.getMessage());
+                }
+            }
+            return null;
         }
+
+//        @Override
+//        protected String doInBackground(Void... params) {
+//            int bufferSize = SharedConstants.CURRENT_BUFFER_SIZE*11/10;
+//            byte byteBuffer[]  = new byte[bufferSize]; // buffer of buffer
+//            ServerSocket serverSocket = null;
+//
+//            try {
+//                serverSocket = new ServerSocket(SharedConstants.PORT);
+//                sendMsg("Server: Socket opened");
+//                Socket client = serverSocket.accept();
+//                sendMsg("Server: connection done");
+//
+//                InputStream inputstream = client.getInputStream();
+//                BufferedInputStream br = new BufferedInputStream(inputstream);
+//                while(br.read(byteBuffer) != -1){
+//                    String str = "";
+//                    for(byte bytes:byteBuffer){
+//                        str += bytes + " ";
+//                    }
+//                    byteBuffer = new byte[bufferSize]; // initialize manually for the last line.
+//                    sendMsg("Input stream --->>> " + str);
+//                }
+//                sendMsg("reading done.");
+//                inputstream.close();
+//                br.close();
+//                serverSocket.close();
+//                IS_SERVER_RUNNING = false;
+//                return null;
+//            } catch (IOException e) {
+//                try {
+//                    if(serverSocket != null) serverSocket.close();
+//                    sendMsg("Server: Socket closed");
+//                } catch (IOException e1) {
+//                    e1.printStackTrace();
+//                }
+//                IS_SERVER_RUNNING = false;
+//                sendMsg(e.getMessage());
+//                return null;
+//            }
+//        }
 
         @Override
         protected void onPostExecute(String result) {
 
-            // do what is needed to do
+        }
 
-//            if (result != null) {
-//                statusText.setText("File copied - " + result);
-//                Intent intent = new Intent();
-//                intent.setAction(android.content.Intent.ACTION_VIEW);
-//                intent.setDataAndType(Uri.parse("file://" + result), "image/*");
-//                context.startActivity(intent);
-//            }
+        private void sendMsg(String msg){
+            Bundle bundle = new Bundle();
+            bundle.putString(SharedConstants.KEY_MSG, msg);
+            bundle.putString(SharedConstants.KEY_LOGTAG, LOG_TAG);
+
+            Message msgObj = new Message();
+            msgObj.what = SharedConstants.BYTE_RECORD;
+            msgObj.setData(bundle);
+            mHandler.sendMessage(msgObj);
         }
     }
 
-    public static void log(String tag, String log){
-        Log.i(tag, log);
-        logText += "\n" + tag + "   " + log;
-        mLogView.setText(logText);
+    private class MainHandler extends Handler {
+        Context mContext;
+
+        public MainHandler(Context c){
+            super();
+            mContext = c;
+        }
+
+        @Override
+        public void handleMessage(android.os.Message msg) {
+            super.handleMessage(msg);
+
+            switch(msg.what){
+                case SharedConstants.BYTE_RECORD:
+                    MainActivity.log(msg.getData().getString(SharedConstants.KEY_LOGTAG), msg.getData().getString(SharedConstants.KEY_MSG));
+                    break;
+                case SharedConstants.STOP_SEARCHING:
+                    mManager.stopPeerDiscovery(mChannel, null);
+                    MainActivity.log(MainActivity.LOG_TAG, "stop searching msg received and called a method.");
+                    break;
+                case SharedConstants.REQUEST_CONNECTION:
+                    MainActivity.log(MainActivity.LOG_TAG, "Step 4. connection requested. busy connection? "+isConnectionBusy);
+                    if(!isConnectionBusy){
+                        isConnectionBusy = true;
+                        WifiP2pConfig config = new WifiP2pConfig();
+                        if(MODE == SharedConstants.MODE_CLIENT){
+                            config.groupOwnerIntent = 0;
+                            config.deviceAddress = SharedConstants.SERVER_ADDRESS;
+                        }else if(MODE == SharedConstants.MODE_SERVER){
+                            config.groupOwnerIntent = 15; // Should be a number between 1-15(>0).
+                            config.deviceAddress = SharedConstants.CLIENT_ADDRESS;
+                        }
+
+                        if (progressDialog != null && progressDialog.isShowing()) {
+                            progressDialog.dismiss();
+                        }
+                        progressDialog = ProgressDialog.show(mContext, "Press back to cancel",
+                                "Connecting to :" + config.deviceAddress, true, true);
+
+                        mManager.connect(mChannel, config, new WifiP2pManager.ActionListener() {
+                            @Override
+                            public void onSuccess() {
+                                // Success logic, we also get broadcast, so things are implemented there.
+                                // See onConnectionInfoAvailable
+                                MainActivity.log(LOG_TAG, "Step 5. Wifi direct Connected successfully");
+                            }
+                            @Override
+                            public void onFailure(int reason) {
+                                //failure logic
+                                MainActivity.log(LOG_TAG, "Step 5. Failed to connection : " + reason);
+                                isConnectionBusy = false;
+                            }
+                        });
+                    }
+                    break;
+                case SharedConstants.DISCONNECTED:
+                    if (progressDialog != null && progressDialog.isShowing()) {
+                        progressDialog.dismiss();
+                    }
+                    isConnected = false;
+                    break;
+                default:
+                    break;
+            }
+        }
     }
-
-
-    // USB Permission
-//    @Override
-//    public void onDestroy() {
-//        super.onDestroy();
-//        unregisterReceiver(mUsbReceiver);
-//
-//        if(mic1_Connection!=null){
-//            mic1_Connection.releaseInterface(mic1_Interface);
-//            mic1_Connection.close();
-//        }
-//
-//        if(mic2_Connection!=null){
-//            mic2_Connection.releaseInterface(mic2_Interface);
-//            mic2_Connection.close();
-//        }
-//    }
-//    private static final String ACTION_USB_PERMISSION = "com.android.example.USB_PERMISSION";
-//    private final BroadcastReceiver mUsbReceiver = new BroadcastReceiver() {
-//
-//        public void onReceive(Context context, Intent intent) {
-//            String action = intent.getAction();
-//            if (ACTION_USB_PERMISSION.equals(action)) {
-//                synchronized (this) {
-//                    UsbDevice device = (UsbDevice)intent.getParcelableExtra(UsbManager.EXTRA_DEVICE);
-//
-//                    if (intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)) {
-//                        if(device != null){
-//                            //call method to set up device communication
-//                        }
-//                    }
-//                    else {
-//                        Log.d(LOG_TAG, "permission denied for device " + device);
-//                    }
-//                }
-//            }
-//        }
-//    };
-//
-//    class DataTransferThread extends Thread {
-//        private byte[] buffer;
-//        private UsbDeviceConnection connection;
-//        private UsbEndpoint endpoint;
-//
-//        public DataTransferThread(byte[] bytes, UsbEndpoint endpoint,UsbDeviceConnection connection) {
-//            this.buffer = bytes;
-//            this.endpoint = endpoint;
-//            this.connection = connection;
-//        }
-//
-//        @Override
-//        public void start() {
-//            Log.d(LOG_TAG, "in start");
-//
-//            connection.bulkTransfer(endpoint, buffer, buffer.length, TIMEOUT);
-//            for(byte b : buffer){
-////                Log.d(LOG_TAG, "bytes transferred. - " + buffer.toString());
-//                Log.d(LOG_TAG, "bytes transferred. - " + b);
-//            }
-//        }
-//    }
-    // USB Permission
 }
