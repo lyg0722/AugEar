@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.IntentFilter;
+import android.graphics.Color;
 import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pInfo;
 import android.net.wifi.p2p.WifiP2pManager;
@@ -42,7 +43,6 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
     private static boolean IS_SERVER_RUNNING = false;
     private static boolean mRecorder_onAir = false;
     private static String logText = "";
-    private static int logLineCount = 0;
     private static TextView mLogView = null;
     private static boolean isConnectionBusy = false;
     private static boolean isConnected = false;
@@ -58,7 +58,6 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
     private Channel mChannel;
     private BroadcastReceiver mReceiver;
     private IntentFilter mIntentFilter;
-    private WifiP2pInfo mConnectionInfo;
     private String hostAddress;
     private ProgressDialog progressDialog = null;
 
@@ -83,6 +82,10 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
         mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION);
         mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
 
+        // Recorder init
+        mRecorder = new Recorder(mHandler);
+        mRecordButton = (TextView) findViewById(R.id.btn1);
+
         // Choose mode: server or client
         mModeText = (TextView)findViewById(R.id.mode);
         DialogInterface.OnClickListener serverClick = new DialogInterface.OnClickListener() {
@@ -93,6 +96,9 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
                 if(mReceiver!=null){
                     ((WiFiDirectBroadcastReceiver)mReceiver).setMode(MODE);
                 }
+
+                // server cannot use button
+                mRecordButton.setBackgroundColor(Color.rgb(255, 255, 255));
             }
         };
         DialogInterface.OnClickListener clientClick = new DialogInterface.OnClickListener() {
@@ -103,6 +109,13 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
                 if(mReceiver!=null){
                     ((WiFiDirectBroadcastReceiver)mReceiver).setMode(MODE);
                 }
+
+                mRecordButton.setOnClickListener(new View.OnClickListener() {
+                    @Override
+                    public void onClick(View v) {
+                        toggleRecorder();
+                    }
+                });
             }
         };
         AlertDialog.Builder adBuilder = new AlertDialog.Builder(this);
@@ -112,32 +125,6 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
                 .setNegativeButton("Client", clientClick)
                 .show();
 
-        // Recorder init
-        mRecorder = new Recorder(mHandler);
-        mRecordButton = (TextView) findViewById(R.id.btn1);
-        mRecordButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                if (mRecorder_onAir) {
-                    // recording -> stop
-                    mRecorder.stopRecording();
-                    mRecorder = new Recorder(mHandler);
-                    mRecorder.setHostAddress(hostAddress);
-                    mRecordButton.setText("START RECOGNITION");
-                } else {
-                    // stop -> recording
-                    if(MODE == SharedConstants.MODE_SERVER){
-                        mRecorder.startRecordingToFile("recordTest.wav");
-                    }else if(MODE == SharedConstants.MODE_CLIENT){
-                        mRecorder.startStreaming();
-                    }else{
-                        Toast.makeText(getApplicationContext(), "Need to select mode", Toast.LENGTH_SHORT).show();
-                    }
-                    mRecordButton.setText("STOP RECOGNITION");
-                }
-                mRecorder_onAir = !mRecorder_onAir;
-            }
-        });
 
         mRefreshButton = (ImageView) findViewById(R.id.refreshicon);
         mRefreshButton.setOnClickListener(new View.OnClickListener() {
@@ -162,18 +149,6 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
                             isConnectionBusy = false;
                         }
                     });
-//                    mManager.cancelConnect(mChannel, new WifiP2pManager.ActionListener() {
-//                        @Override
-//                        public void onSuccess() {
-//                            MainActivity.log(MainActivity.LOG_TAG, "Disconnect and discover.");
-//                            isConnected = false;
-//                            discoverPeers();
-//                        }
-//                        @Override
-//                        public void onFailure(int reason) {
-//                            MainActivity.log(MainActivity.LOG_TAG, "failed to disconnect.");
-//                        }
-//                    });
                 } else {
                     MainActivity.log(MainActivity.LOG_TAG, "Step 1. Not connected. Start discovery.");
                     discoverPeers();
@@ -181,93 +156,6 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
 
             }
         });
-
-
-
-        // USB Things
-//        mUsbManager = (UsbManager) getSystemService(this.USB_SERVICE);
-//        HashMap<String, UsbDevice> devlist = mUsbManager.getDeviceList();
-//        Iterator<UsbDevice> devIter = devlist.values().iterator();
-//
-//        PendingIntent mPermissionIntent = PendingIntent.getBroadcast(this, 0, new Intent(ACTION_USB_PERMISSION), 0);
-//        IntentFilter filter = new IntentFilter(ACTION_USB_PERMISSION);
-//        registerReceiver(mUsbReceiver, filter);
-//
-//        while (devIter.hasNext()){
-//            UsbDevice device = devIter.next();
-//            int deviceId = device.getDeviceId();
-//            if(deviceId == 1005) mic1 = device;
-//            else if(deviceId == 1006) mic2 = device;
-//            else mouse = device;
-//
-//            Log.i(LOG_TAG,"devId="+device.getDeviceId()+" / devName="+device.getDeviceName()+" / prodId="+device.getProductId()+" / prodName="+device.getProductName());
-//        }
-//        Log.i(LOG_TAG, "mic1 class"+mic1.getDeviceClass());
-//        Log.i(LOG_TAG, "mic1 protocol" + mic1.getDeviceProtocol());
-//        Log.i(LOG_TAG, "mic1 interface count"+mic1.getInterfaceCount());
-////        Log.i(LOG_TAG, "mic2 "+mic2.getDeviceId());
-//
-//        mUsbManager.requestPermission(mic1, mPermissionIntent);
-////        mUsbManager.requestPermission(mic2, mPermissionIntent);
-//
-//
-//        byte[] bytes = new byte[30];
-//        boolean forceClaim = true;
-//
-//        mic1_Interface0 = mic1.getInterface(0);
-//        mic1_Interface1 = mic1.getInterface(1);
-//        mic1_Interface2 = mic1.getInterface(2);
-//        mic1_Interface3 = mic1.getInterface(3);
-////        mic2_Interface = mic2.getInterface(2);
-//
-//        StringBuilder builder = new StringBuilder();
-//        for (int i=0; i<mic1.getInterfaceCount(); i++)
-//        {
-//            String epDirString = "No endpoints";
-//            String epTypeString = "No endpoints";
-//
-//            if (mic1.getInterface(i).getEndpointCount() > 0)
-//            {
-//                epDirString = String.valueOf(mic1.getInterface(i).getEndpoint(0).getDirection());
-//                epTypeString = String.valueOf(mic1.getInterface(i).getEndpoint(0).getType());
-//            }
-//
-//            builder.append("Int. " + i + " EP count: " + mic1.getInterface(i).getEndpointCount() +
-//                    " || EP direction: " + epDirString + " || EP type: " + epTypeString + "\n");
-//
-//        }
-//        Log.i(LOG_TAG, builder.toString());
-//
-//        mic1_Endpoint2 = mic1_Interface2.getEndpoint(0);        // isochronous
-//        mic1_Endpoint3 = mic1_Interface3.getEndpoint(0);        // interrupt
-////        mic2_EndpointFromMic = mic2_Interface.getEndpoint(0);
-//
-//        Log.d(LOG_TAG, "ep get");
-//
-//        mic1_Connection = mUsbManager.openDevice(mic1);
-////        mic2_Connection = mUsbManager.openDevice(mic2);
-//        Log.d(LOG_TAG, "open dev");
-//
-////        mic1_Connection.claimInterface(mic1_Interface2, forceClaim);
-////        mic2_Connection.claimInterface(mic2_Interface, forceClaim);
-//        Log.d(LOG_TAG, "claim interface");
-//
-////        UsbRequest requestRecord = new UsbRequest();
-////        requestRecord.initialize(mic1_Connection, mic1_Endpoint3);
-//
-////        mic1_Connection.bulkTransfer(mic1_Endpoint3, bytes, bytes.length, TIMEOUT); //do in another thread
-////        mic2_Connection.bulkTransfer(mic2_EndpointFromMic, bytes, bytes.length, TIMEOUT); //do in another thread
-//
-//        Log.d(LOG_TAG, "start");
-//
-//        Log.d(LOG_TAG, "interface 0 + bulktransfer");
-//        mic1_Connection.claimInterface(mic1_Interface0, forceClaim);
-//        mic1_Connection.controlTransfer()
-//        Thread th = new DataTransferThread(new byte[30], mic1_Endpoint3, mic1_Connection);
-//        th.start();
-//        Log.d(LOG_TAG, "done");
-
-        // USB Things
     }
 
     @Override
@@ -293,7 +181,6 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
 
     @Override
     public void onConnectionInfoAvailable(WifiP2pInfo info) {
-        mConnectionInfo = info;
         isConnected = true;
 
         if (progressDialog != null && progressDialog.isShowing()) {
@@ -350,6 +237,25 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
         return mHandler;
     }
 
+    protected void toggleRecorder(){
+        if (mRecorder_onAir) {
+            // recording -> stop
+            mRecorder.stopRecording();
+            mRecorder = new Recorder(mHandler);
+            mRecorder.setHostAddress(hostAddress);
+            mRecordButton.setText("START RECOGNITION");
+        } else {
+            // stop -> recording
+            if(MODE == SharedConstants.MODE_SERVER){
+
+                mRecorder.startRecordingToFile("rec_server.wav");
+            }else{
+                mRecorder.startStreaming();
+            }
+            mRecordButton.setText("STOP RECOGNITION");
+        }
+        mRecorder_onAir = !mRecorder_onAir;
+    }
 
     /**
      * A simple server socket that accepts connection and writes some data on
@@ -365,6 +271,7 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
             sendMsg("ServerAsyncTask init.");
         }
 
+        // This is for test. You need to modify the other doInBackground which is commentized below.
         @Override
         protected String doInBackground(Void... params) {
             BufferedInputStream tmpInputStream;
@@ -372,8 +279,8 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
             int bufferSize = SharedConstants.CURRENT_BUFFER_SIZE;
             int audioLen = 0;
             byte byteBuffer[]  = new byte[bufferSize]; // buffer of buffer
-            String TEMP_FILE_NAME = "temp.bak";
-            String RESULT_FILE_NAME = "result.wav";
+            String TEMP_FILE_NAME = "temp_client.bak";
+            String RESULT_FILE_NAME = "rec_client.wav";
             ServerSocket serverSocket = null;
 
             File waveFile = new File(Environment.getExternalStorageDirectory()+"/"+ RESULT_FILE_NAME);
@@ -390,13 +297,22 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
                 try {
                     serverSocket = new ServerSocket(SharedConstants.PORT);
                     sendMsg("Server: Socket opened");
-                    Socket client = serverSocket.accept();
-                    sendMsg("Server: connection done");
+                    Socket client = serverSocket.accept();  // Waits for an incoming request and blocks until the connection is opened.
+                    sendMsg("Server: connection done start recording");
+                    sendMsgToggleRecorder();
 
                     InputStream inputstream = client.getInputStream();
                     BufferedInputStream bIS = new BufferedInputStream(inputstream);
                     int numBytesRead = 0;
+                    int count = 0;
+                    long prevTime = System.currentTimeMillis();
+                    long currTime;
                     while ((numBytesRead = bIS.read(byteBuffer)) != -1) {
+                        if(count++/10==0){
+                            currTime = System.currentTimeMillis();
+                            sendMsg("numBytesRead: "+numBytesRead+" / avg time per loop(ms): "+(currTime-prevTime)/10);
+                            prevTime = currTime;
+                        }
                         bOutStream.write(byteBuffer, 0, numBytesRead);
                     }
                     bOutStream.flush();
@@ -404,6 +320,8 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
                     inputstream.close();
                     bIS.close();
                     audioLen = (int) tempFile.length();
+
+                    sendMsgToggleRecorder();
 
                     byteBuffer  = new byte[bufferSize];
                     tmpInputStream = new BufferedInputStream(new FileInputStream(tempFile));
@@ -433,6 +351,7 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
             return null;
         }
 
+        // This is for use.
 //        @Override
 //        protected String doInBackground(Void... params) {
 //            int bufferSize = SharedConstants.CURRENT_BUFFER_SIZE*11/10;
@@ -489,6 +408,12 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
             msgObj.setData(bundle);
             mHandler.sendMessage(msgObj);
         }
+
+        private void sendMsgToggleRecorder(){
+            Message msgObj = new Message();
+            msgObj.what = SharedConstants.SERVER_RECORDING;
+            mHandler.sendMessage(msgObj);
+        }
     }
 
     private class MainHandler extends Handler {
@@ -541,6 +466,9 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
                             public void onFailure(int reason) {
                                 //failure logic
                                 MainActivity.log(LOG_TAG, "Step 5. Failed to connection : " + reason);
+                                if (progressDialog != null && progressDialog.isShowing()) {
+                                    progressDialog.dismiss();
+                                }
                                 isConnectionBusy = false;
                             }
                         });
@@ -551,6 +479,9 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
                         progressDialog.dismiss();
                     }
                     isConnected = false;
+                    break;
+                case SharedConstants.SERVER_RECORDING:
+                    toggleRecorder();
                     break;
                 default:
                     break;

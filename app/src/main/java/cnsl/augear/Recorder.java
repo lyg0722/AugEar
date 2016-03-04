@@ -3,23 +3,19 @@ package cnsl.augear;
 import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
-import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
-import android.util.Log;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
-import java.io.ObjectInputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -30,19 +26,16 @@ import java.net.Socket;
 public class Recorder {
     private static final String LOG_TAG = "Recorder";
     private static final int RECORDER_AUDIO_ENCODING = AudioFormat.ENCODING_PCM_16BIT;
-    private static final int RECORDER_CHANNELS = AudioFormat.CHANNEL_IN_MONO;
-    private static final int WAVE_CHANNEL_MONO = 1;
     private static final int HEADER_SIZE = 0x2c;
     private static final int RECORDER_BPS = 16;
     private static final int RECORDER_SAMPLERATE = 44100;
+    private static final int WAVE_CHANNEL = 1;  // mono
+    private static final int RECORDER_CHANNELS = AudioFormat.CHANNEL_IN_MONO;
 
     private final int BUFFER_SIZE;
-    private final String TEMP_FILE_NAME = "temp.bak";
 
     private AudioRecord mAudioRecord;
     private boolean mIsRecording;
-    private BufferedInputStream mBIStream;
-    private BufferedOutputStream mBOStream;
     private String mFileName;
     private String mHostAddress;
     private int mAudioLen = 0;
@@ -50,13 +43,14 @@ public class Recorder {
     private Handler mHandler;
 
     public Recorder(Handler handler) {
+        mHandler = handler;
         BUFFER_SIZE = AudioRecord.getMinBufferSize(RECORDER_SAMPLERATE, RECORDER_CHANNELS, RECORDER_AUDIO_ENCODING);
         mFileName = null;           // temporarily null because we don't use this.
         mIsRecording = false;
         mAudioRecord = new AudioRecord(MediaRecorder.AudioSource.MIC, RECORDER_SAMPLERATE, RECORDER_CHANNELS, RECORDER_AUDIO_ENCODING, BUFFER_SIZE);
-        mHandler = handler;
 
         SharedConstants.CURRENT_BUFFER_SIZE = BUFFER_SIZE;
+        sendMsg("buffer size: "+SharedConstants.CURRENT_BUFFER_SIZE);
     }
 
     public void startRecordingToFile(String fileName) {
@@ -81,12 +75,16 @@ public class Recorder {
     private void writeToFile(){
         byte[] data = new byte[SharedConstants.CURRENT_BUFFER_SIZE];
         File waveFile = new File(Environment.getExternalStorageDirectory()+"/"+ mFileName);
-        File tempFile = new File(Environment.getExternalStorageDirectory()+"/"+TEMP_FILE_NAME);
+        File tempFile = new File(Environment.getExternalStorageDirectory()+"/"+"temp_server.bak");
+
+        BufferedInputStream mBIStream;
+        BufferedOutputStream mBOStream = null;
 
         try {
             mBOStream = new BufferedOutputStream(new FileOutputStream(tempFile));
         } catch (FileNotFoundException e1) {
             // TODO Auto-generated catch block
+            sendMsg("target file not found. check parent directory.");
             e1.printStackTrace();
         }
 
@@ -115,7 +113,7 @@ public class Recorder {
                 mBOStream.close();
 
             } catch (IOException e1) {
-                // TODO Auto-generated catch block
+                sendMsg("IO exception occurred.");
                 e1.printStackTrace();
             }
         }
@@ -127,7 +125,7 @@ public class Recorder {
         mAudioRecord.startRecording();
         mIsRecording = true;
 
-        sendMsg("Start test streaming.");
+        sendMsg("Start streaming.");
         new Thread(new Runnable() {
             @Override
             public void run() {
@@ -154,7 +152,6 @@ public class Recorder {
                     outputStream.close();
                 } catch (IOException e) {
                     sendMsg("IO exception occurred.");
-                    //catch logic
                 }
 
                 /**
@@ -178,6 +175,8 @@ public class Recorder {
     }
 
     public void stopRecording() {
+        MainActivity.log(LOG_TAG, "stop recording.");
+
         if (mAudioRecord != null) {
             mIsRecording = false;
             mAudioRecord.stop();
@@ -189,7 +188,7 @@ public class Recorder {
     private byte[] getFileHeader() {
         byte[] header = new byte[HEADER_SIZE];
         int totalDataLen = mAudioLen + 40;
-        long byteRate = RECORDER_BPS * RECORDER_SAMPLERATE * WAVE_CHANNEL_MONO/8;
+        long byteRate = RECORDER_BPS * RECORDER_SAMPLERATE * WAVE_CHANNEL /8;
         header[0] = 'R';  // RIFF/WAVE header
         header[1] = 'I';
         header[2] = 'F';
@@ -212,7 +211,7 @@ public class Recorder {
         header[19] = 0;
         header[20] = (byte)1;  // format = 1 (PCM방식)
         header[21] = 0;
-        header[22] =  WAVE_CHANNEL_MONO;
+        header[22] = (byte) WAVE_CHANNEL;
         header[23] = 0;
         header[24] = (byte) (RECORDER_SAMPLERATE & 0xff);
         header[25] = (byte) ((RECORDER_SAMPLERATE >> 8) & 0xff);
@@ -222,7 +221,7 @@ public class Recorder {
         header[29] = (byte) ((byteRate >> 8) & 0xff);
         header[30] = (byte) ((byteRate >> 16) & 0xff);
         header[31] = (byte) ((byteRate >> 24) & 0xff);
-        header[32] = (byte) RECORDER_BPS * WAVE_CHANNEL_MONO/8;  // block align
+        header[32] = (byte) (RECORDER_BPS * WAVE_CHANNEL / 8);  // block align
         header[33] = 0;
         header[34] = RECORDER_BPS;  // bits per sample
         header[35] = 0;
@@ -240,7 +239,7 @@ public class Recorder {
     public static byte[] getFileHeader(int audioLen){
         byte[] header = new byte[HEADER_SIZE];
         int totalDataLen = audioLen + 40;
-        long byteRate = RECORDER_BPS * RECORDER_SAMPLERATE * WAVE_CHANNEL_MONO/8;
+        long byteRate = RECORDER_BPS * RECORDER_SAMPLERATE * WAVE_CHANNEL /8;
         header[0] = 'R';  // RIFF/WAVE header
         header[1] = 'I';
         header[2] = 'F';
@@ -263,7 +262,7 @@ public class Recorder {
         header[19] = 0;
         header[20] = (byte)1;  // format = 1 (PCM방식)
         header[21] = 0;
-        header[22] =  WAVE_CHANNEL_MONO;
+        header[22] = (byte) WAVE_CHANNEL;
         header[23] = 0;
         header[24] = (byte) (RECORDER_SAMPLERATE & 0xff);
         header[25] = (byte) ((RECORDER_SAMPLERATE >> 8) & 0xff);
@@ -273,7 +272,7 @@ public class Recorder {
         header[29] = (byte) ((byteRate >> 8) & 0xff);
         header[30] = (byte) ((byteRate >> 16) & 0xff);
         header[31] = (byte) ((byteRate >> 24) & 0xff);
-        header[32] = (byte) RECORDER_BPS * WAVE_CHANNEL_MONO/8;  // block align
+        header[32] = (byte) (RECORDER_BPS * WAVE_CHANNEL / 8);  // block align
         header[33] = 0;
         header[34] = RECORDER_BPS;  // bits per sample
         header[35] = 0;

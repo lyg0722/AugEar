@@ -8,6 +8,7 @@ public class SharedConstants {
     public static final int STOP_SEARCHING = 2;
     public static final int REQUEST_CONNECTION = 3;
     public static final int DISCONNECTED = 4;
+    public static final int SERVER_RECORDING = 5;
 
     public static final String KEY_LOGTAG = "log";
     public static final String KEY_MSG = "byte";
@@ -16,10 +17,11 @@ public class SharedConstants {
     public static final int MODE_CLIENT = 2;
 
     public static final int PORT = 8988;
-    public static final String SERVER_ADDRESS = "02:0a:f5:54:8c:80";    // YG dragon board
+//    public static final String SERVER_ADDRESS = "02:0a:f5:54:8c:80";    // YG dragon board old
+    public static final String SERVER_ADDRESS = "02:0a:f5:20:88:a0";    // YG dragon board new
     public static final String CLIENT_ADDRESS = "ce:fa:00:e3:46:23";    // YG phone
-//    public static final String SERVER_ADDRESS = "ce:fa:00:e3:46:23";
-//    public static final String CLIENT_ADDRESS = "02:0a:f5:54:8c:80";
+//    public static final String SERVER_ADDRESS = "02:0a:f5:2c:88:a0";    // BG dragon board
+//    public static final String CLIENT_ADDRESS = "ce:fa:00:e3:46:23";    // BG phone
     public static  final int SOCKET_TIMEOUT = 5000;
 
     public static final int DEFAULT_BUFFER_SIZE = 3584;
