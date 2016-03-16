@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:orientation="vertical" android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:layout_margin="40dp"
+    android:background="#FFFFFF"
+    android:gravity="center">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Calibration"
+        android:textSize="20dp"
+        android:layout_margin="10dp"
+        android:textColor="#747474"
+        android:layout_gravity="center"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="3"
+        android:textSize="80dp"
+        android:layout_gravity="center"
+        android:textColor="#747474"
+        android:id="@+id/num_countdown"/>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Make a sound once before countdown ends.\nThe sound should be made at the center of the microphones."
+        android:textSize="15dp"
+        android:layout_margin="10dp"
+        android:textColor="#747474"
+        android:gravity="center"
+        android:layout_gravity="center"/>
+
+</LinearLayout>

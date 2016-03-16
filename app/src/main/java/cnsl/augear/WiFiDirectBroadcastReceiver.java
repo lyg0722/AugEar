@@ -52,11 +52,11 @@ public class WiFiDirectBroadcastReceiver extends BroadcastReceiver {
         } else if (WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION.equals(action)) {
             // Call WifiP2pManager.requestPeers() to get a list of current peers
             if (mManager != null) {
-                if (mode == SharedConstants.MODE_SERVER){
+//                if (mode == SharedConstants.MODE_SERVER){
                     Message msg = new Message();
                     msg.what = SharedConstants.REQUEST_CONNECTION;
                     mHandler.sendMessage(msg);
-                }
+//                }
             }
         } else if (WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION.equals(action)) {
             // Respond to new connection or disconnections
@@ -65,14 +65,16 @@ public class WiFiDirectBroadcastReceiver extends BroadcastReceiver {
                 return;
             }
 
-            NetworkInfo networkInfo = (NetworkInfo) intent.getParcelableExtra(WifiP2pManager.EXTRA_NETWORK_INFO);
+            NetworkInfo networkInfo = intent.getParcelableExtra(WifiP2pManager.EXTRA_NETWORK_INFO);
 
             if (networkInfo.isConnected()) {
+                MainActivity.log(LOG_TAG, "Connection Change: New connection.");
                 // we are connected with the other device, request connection
                 // info to find group owner IP
                 mManager.requestConnectionInfo(mChannel, mActivity);
             } else {
                 // It's a disconnect
+                MainActivity.log(LOG_TAG, "Connection Change: Disconnection.");
                 Message.obtain(mHandler, SharedConstants.DISCONNECTED).sendToTarget();
             }
         } else if (WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION.equals(action)) {

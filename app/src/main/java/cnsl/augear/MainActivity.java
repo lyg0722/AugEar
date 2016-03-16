@@ -11,47 +11,42 @@ import android.net.wifi.p2p.WifiP2pConfig;
 import android.net.wifi.p2p.WifiP2pInfo;
 import android.net.wifi.p2p.WifiP2pManager;
 import android.net.wifi.p2p.WifiP2pManager.Channel;
-import android.os.AsyncTask;
 import android.os.Bundle;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.Message;
 import android.support.v7.app.AppCompatActivity;
 import android.text.method.ScrollingMovementMethod;
 import android.util.Log;
 import android.view.View;
+import android.view.animation.AlphaAnimation;
+import android.view.animation.Animation;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.ServerSocket;
-import java.net.Socket;
+import java.lang.reflect.Method;
 
 public class MainActivity extends AppCompatActivity implements WifiP2pManager.ConnectionInfoListener {
-    private static final String LOG_TAG = "AudioRecordTest";
+    private static final String LOG_TAG = "MainActivity";
     private static final int TIMEOUT = 3000;
 
     private static int MODE = -1;
-    private static boolean IS_SERVER_RUNNING = false;
     private static boolean mRecorder_onAir = false;
     private static String logText = "";
     private static TextView mLogView = null;
     private static boolean isConnectionBusy = false;
     private static boolean isConnected = false;
+    private static boolean isAnimRunning = false;
 
     private TextView mRecordButton = null;
     private TextView mModeText = null;
+    private TextView mTextBox = null;
     private ImageView mRefreshButton = null;
+    private ImageView mRightBox = null;
+    private ImageView mLeftBox = null;
+    private ImageView coloredBox = null;
     private Recorder mRecorder = null;
-    private int const_count = 0;
+    private DataQueue mDataQueue = null;
     private MainHandler mHandler;
 
     private WifiP2pManager mManager;
@@ -67,6 +62,7 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
         this.setContentView(R.layout.main);
 
         mHandler = new MainHandler(this);
+        mDataQueue = new DataQueue(mHandler);
 
         // Log view
         mLogView = (TextView) findViewById(R.id.logview);
@@ -75,6 +71,7 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
         // wifi init.
         mManager = (WifiP2pManager) getSystemService(Context.WIFI_P2P_SERVICE);
         mChannel = mManager.initialize(this, getMainLooper(), null);
+        deletePersistentGroups();
 
         mIntentFilter = new IntentFilter();
         mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION);
@@ -83,7 +80,7 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
         mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
 
         // Recorder init
-        mRecorder = new Recorder(mHandler);
+        mRecorder = new Recorder(mHandler, mDataQueue);
         mRecordButton = (TextView) findViewById(R.id.btn1);
 
         // Choose mode: server or client
@@ -96,7 +93,6 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
                 if(mReceiver!=null){
                     ((WiFiDirectBroadcastReceiver)mReceiver).setMode(MODE);
                 }
-
                 // server cannot use button
                 mRecordButton.setBackgroundColor(Color.rgb(255, 255, 255));
             }
@@ -113,7 +109,9 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
                 mRecordButton.setOnClickListener(new View.OnClickListener() {
                     @Override
                     public void onClick(View v) {
-                        toggleRecorder();
+                        if(isConnected){
+                            toggleRecorder();
+                        }
                     }
                 });
             }
@@ -153,53 +151,27 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
                     MainActivity.log(MainActivity.LOG_TAG, "Step 1. Not connected. Start discovery.");
                     discoverPeers();
                 }
-
             }
         });
+
+        mTextBox = (TextView) findViewById(R.id.textbox);
+        mRightBox = (ImageView) findViewById(R.id.rightbox);
+        mLeftBox = (ImageView) findViewById(R.id.leftbox);
     }
 
-    @Override
-    protected void onResume() {
-        super.onResume();
-        mReceiver = new WiFiDirectBroadcastReceiver(mManager, mChannel, this);
-        registerReceiver(mReceiver, mIntentFilter);
-    }
-
-    @Override
-    public void onPause() {
-        super.onPause();
-        unregisterReceiver(mReceiver);
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        if (mRecorder != null) {
-            mRecorder.stopRecording();
-        }
-    }
-
-    @Override
-    public void onConnectionInfoAvailable(WifiP2pInfo info) {
-        isConnected = true;
-
-        if (progressDialog != null && progressDialog.isShowing()) {
-            progressDialog.dismiss();
-        }
-
-        // InetAddress from WifiP2pInfo struct.
-        hostAddress = info.groupOwnerAddress.getHostAddress();
-
-        if (info.groupFormed && info.isGroupOwner) {
-            // server
-            if(!IS_SERVER_RUNNING){
-                MainActivity.log(LOG_TAG, "Step 3. This is server. start serverAsyncTask");
-                new ServerAsyncTask(this, mHandler).execute();
+    private void deletePersistentGroups(){
+        try {
+            Method[] methods = WifiP2pManager.class.getMethods();
+            for (int i = 0; i < methods.length; i++) {
+                if (methods[i].getName().equals("deletePersistentGroup")) {
+                    // Delete any persistent group
+                    for (int netid = 0; netid < 32; netid++) {
+                        methods[i].invoke(mManager, mChannel, netid, null);
+                    }
+                }
             }
-        } else if (info.groupFormed) {
-            // The other device acts as the client.
-            MainActivity.log(LOG_TAG, "Step 3. This is client. set hostAdress.");
-            mRecorder.setHostAddress(hostAddress);
+        } catch(Exception e) {
+            e.printStackTrace();
         }
     }
 
@@ -222,6 +194,93 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
         });
     }
 
+    @Override
+    public void onConnectionInfoAvailable(WifiP2pInfo info) {
+        if (progressDialog != null && progressDialog.isShowing()) {
+            progressDialog.dismiss();
+        }
+
+        log(LOG_TAG, info.toString());
+
+        // InetAddress from WifiP2pInfo struct.
+        if (info.groupFormed) {
+            if(info.isGroupOwner){
+                // server
+                MainActivity.log(LOG_TAG, "Step 3. This is server. start serverAsyncTask");
+                new ServerAsyncTask(mHandler, mDataQueue).execute();
+            }else{
+                // The other device acts as the client.
+                MainActivity.log(LOG_TAG, "Step 3. This is client. set hostAdress.");
+                hostAddress = info.groupOwnerAddress.getHostAddress();
+                mRecorder.setHostAddress(hostAddress);
+            }
+        }
+        isConnected = true;
+    }
+
+    protected void toggleRecorder() {
+        if (mRecorder_onAir) {
+            // recording -> stop
+            mRecorder.stopRecording();
+            mRecorder = new Recorder(mHandler, mDataQueue);
+            mRecorder.setHostAddress(hostAddress);
+            mRecordButton.setText("START RECOGNITION");
+        } else {
+            // stop -> recording
+            if (MODE == SharedConstants.MODE_SERVER) {
+//                mRecorder.startRecordingToFile("rec_server.wav");
+                log(LOG_TAG, "server recording start");
+                mRecorder.startLocalStreaming();
+                findViewById(R.id.frag_container).bringToFront();
+                findViewById(R.id.frag_container).setVisibility(View.VISIBLE);
+                getFragmentManager().beginTransaction().add(R.id.frag_container, new CountdownFragment(), SharedConstants.FRAG_TAG).commit();
+            } else {
+                mRecorder.startWifiStreaming();
+            }
+            mRecordButton.setText("STOP RECOGNITION");
+        }
+        mRecorder_onAir = !mRecorder_onAir;
+    }
+
+    private void blinkBox(int box){
+        if(!isAnimRunning){
+            isAnimRunning = true;
+            if(box == SharedConstants.LEFT){
+                coloredBox = mLeftBox;
+            }else if(box == SharedConstants.RIGHT){
+                coloredBox = mRightBox;
+            }else {
+                log(LOG_TAG, "wrong box number.");
+                return;
+            }
+
+            mTextBox.setText("Warning!!!");
+
+            coloredBox.setBackgroundColor(Color.rgb(255, 0, 0));
+            Animation anim1 = new AlphaAnimation(0.0f, 1.0f);
+            anim1.setDuration(150);
+            anim1.setRepeatCount(20);   // 150ms x 20 = 3sec
+            anim1.setStartOffset(0);
+            anim1.setRepeatMode(Animation.REVERSE);
+            coloredBox.startAnimation(anim1);
+
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        Thread.sleep(4000);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                    Message.obtain(mHandler, SharedConstants.RETURN_TO_NORMAL).sendToTarget();
+                    isAnimRunning = false;
+                }
+            }).start();
+        }else {
+            log(LOG_TAG, "Anim Running");
+        }
+    }
+
     public static void log(String tag, String log){
         // TODO: logLineCount 이용하여 log 길이 일정하게 유지하기(메모리부족)
         Log.i(tag, log);
@@ -235,185 +294,6 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
 
     public Handler getHandler(){
         return mHandler;
-    }
-
-    protected void toggleRecorder(){
-        if (mRecorder_onAir) {
-            // recording -> stop
-            mRecorder.stopRecording();
-            mRecorder = new Recorder(mHandler);
-            mRecorder.setHostAddress(hostAddress);
-            mRecordButton.setText("START RECOGNITION");
-        } else {
-            // stop -> recording
-            if(MODE == SharedConstants.MODE_SERVER){
-
-                mRecorder.startRecordingToFile("rec_server.wav");
-            }else{
-                mRecorder.startStreaming();
-            }
-            mRecordButton.setText("STOP RECOGNITION");
-        }
-        mRecorder_onAir = !mRecorder_onAir;
-    }
-
-    /**
-     * A simple server socket that accepts connection and writes some data on
-     * the stream.
-     */
-    public static class ServerAsyncTask extends AsyncTask<Void, Void, String> {
-        private final Context mContext;
-        private Handler mHandler;
-
-        public ServerAsyncTask(Context context, Handler handler) {
-            mContext = context;
-            mHandler = handler;
-            sendMsg("ServerAsyncTask init.");
-        }
-
-        // This is for test. You need to modify the other doInBackground which is commentized below.
-        @Override
-        protected String doInBackground(Void... params) {
-            BufferedInputStream tmpInputStream;
-            BufferedOutputStream bOutStream = null;
-            int bufferSize = SharedConstants.CURRENT_BUFFER_SIZE;
-            int audioLen = 0;
-            byte byteBuffer[]  = new byte[bufferSize]; // buffer of buffer
-            String TEMP_FILE_NAME = "temp_client.bak";
-            String RESULT_FILE_NAME = "rec_client.wav";
-            ServerSocket serverSocket = null;
-
-            File waveFile = new File(Environment.getExternalStorageDirectory()+"/"+ RESULT_FILE_NAME);
-            File tempFile = new File(Environment.getExternalStorageDirectory()+"/"+TEMP_FILE_NAME);
-
-            try {
-                bOutStream = new BufferedOutputStream(new FileOutputStream(tempFile));
-            } catch (FileNotFoundException e1) {
-                // TODO Auto-generated catch block
-                e1.printStackTrace();
-            }
-
-            if (null != bOutStream) {
-                try {
-                    serverSocket = new ServerSocket(SharedConstants.PORT);
-                    sendMsg("Server: Socket opened");
-                    Socket client = serverSocket.accept();  // Waits for an incoming request and blocks until the connection is opened.
-                    sendMsg("Server: connection done start recording");
-                    sendMsgToggleRecorder();
-
-                    InputStream inputstream = client.getInputStream();
-                    BufferedInputStream bIS = new BufferedInputStream(inputstream);
-                    int numBytesRead = 0;
-                    int count = 0;
-                    long prevTime = System.currentTimeMillis();
-                    long currTime;
-                    while ((numBytesRead = bIS.read(byteBuffer)) != -1) {
-                        if(count++/10==0){
-                            currTime = System.currentTimeMillis();
-                            sendMsg("numBytesRead: "+numBytesRead+" / avg time per loop(ms): "+(currTime-prevTime)/10);
-                            prevTime = currTime;
-                        }
-                        bOutStream.write(byteBuffer, 0, numBytesRead);
-                    }
-                    bOutStream.flush();
-                    bOutStream.close();
-                    inputstream.close();
-                    bIS.close();
-                    audioLen = (int) tempFile.length();
-
-                    sendMsgToggleRecorder();
-
-                    byteBuffer  = new byte[bufferSize];
-                    tmpInputStream = new BufferedInputStream(new FileInputStream(tempFile));
-                    bOutStream = new BufferedOutputStream(new FileOutputStream(waveFile));
-                    bOutStream.write(Recorder.getFileHeader(audioLen));
-                    while ((numBytesRead = tmpInputStream.read(byteBuffer)) != -1) {
-                        bOutStream.write(byteBuffer, 0 , numBytesRead);
-                    }
-                    bOutStream.flush();
-                    tmpInputStream.close();
-                    bOutStream.close();
-
-                    sendMsg("file write done.");
-                    serverSocket.close();
-                    IS_SERVER_RUNNING = false;
-                } catch (IOException e) {
-                    try {
-                        if (serverSocket != null) serverSocket.close();
-                        sendMsg("Server: Socket closed");
-                    } catch (IOException e1) {
-                        e1.printStackTrace();
-                    }
-                    IS_SERVER_RUNNING = false;
-                    sendMsg(e.getMessage());
-                }
-            }
-            return null;
-        }
-
-        // This is for use.
-//        @Override
-//        protected String doInBackground(Void... params) {
-//            int bufferSize = SharedConstants.CURRENT_BUFFER_SIZE*11/10;
-//            byte byteBuffer[]  = new byte[bufferSize]; // buffer of buffer
-//            ServerSocket serverSocket = null;
-//
-//            try {
-//                serverSocket = new ServerSocket(SharedConstants.PORT);
-//                sendMsg("Server: Socket opened");
-//                Socket client = serverSocket.accept();
-//                sendMsg("Server: connection done");
-//
-//                InputStream inputstream = client.getInputStream();
-//                BufferedInputStream br = new BufferedInputStream(inputstream);
-//                while(br.read(byteBuffer) != -1){
-//                    String str = "";
-//                    for(byte bytes:byteBuffer){
-//                        str += bytes + " ";
-//                    }
-//                    byteBuffer = new byte[bufferSize]; // initialize manually for the last line.
-//                    sendMsg("Input stream --->>> " + str);
-//                }
-//                sendMsg("reading done.");
-//                inputstream.close();
-//                br.close();
-//                serverSocket.close();
-//                IS_SERVER_RUNNING = false;
-//                return null;
-//            } catch (IOException e) {
-//                try {
-//                    if(serverSocket != null) serverSocket.close();
-//                    sendMsg("Server: Socket closed");
-//                } catch (IOException e1) {
-//                    e1.printStackTrace();
-//                }
-//                IS_SERVER_RUNNING = false;
-//                sendMsg(e.getMessage());
-//                return null;
-//            }
-//        }
-
-        @Override
-        protected void onPostExecute(String result) {
-
-        }
-
-        private void sendMsg(String msg){
-            Bundle bundle = new Bundle();
-            bundle.putString(SharedConstants.KEY_MSG, msg);
-            bundle.putString(SharedConstants.KEY_LOGTAG, LOG_TAG);
-
-            Message msgObj = new Message();
-            msgObj.what = SharedConstants.BYTE_RECORD;
-            msgObj.setData(bundle);
-            mHandler.sendMessage(msgObj);
-        }
-
-        private void sendMsgToggleRecorder(){
-            Message msgObj = new Message();
-            msgObj.what = SharedConstants.SERVER_RECORDING;
-            mHandler.sendMessage(msgObj);
-        }
     }
 
     private class MainHandler extends Handler {
@@ -442,11 +322,12 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
                         isConnectionBusy = true;
                         WifiP2pConfig config = new WifiP2pConfig();
                         if(MODE == SharedConstants.MODE_CLIENT){
-                            config.groupOwnerIntent = 0;
+                            config.groupOwnerIntent = 1;
                             config.deviceAddress = SharedConstants.SERVER_ADDRESS;
                         }else if(MODE == SharedConstants.MODE_SERVER){
-                            config.groupOwnerIntent = 15; // Should be a number between 1-15(>0).
+                            config.groupOwnerIntent = 14; // Should be a number between 1-15(>0).
                             config.deviceAddress = SharedConstants.CLIENT_ADDRESS;
+//                            mManager.createGroup(mChannel, null);
                         }
 
                         if (progressDialog != null && progressDialog.isShowing()) {
@@ -480,12 +361,44 @@ public class MainActivity extends AppCompatActivity implements WifiP2pManager.Co
                     }
                     isConnected = false;
                     break;
-                case SharedConstants.SERVER_RECORDING:
+                case SharedConstants.LOCAL_STREAMING:
                     toggleRecorder();
+                    break;
+                case SharedConstants.CALIBRATION_FINISHED:
+                    findViewById(R.id.frag_container).setVisibility(View.INVISIBLE);
+                    getFragmentManager().beginTransaction().remove(getFragmentManager().findFragmentByTag(SharedConstants.FRAG_TAG)).commit();
+                    break;
+                case SharedConstants.RETURN_TO_NORMAL:
+                    mTextBox.setText("Normal");
+                    coloredBox.setBackgroundColor(Color.rgb(255,255,255));
+                    break;
+                case SharedConstants.STATUS_UPDATE:
+                    blinkBox(msg.getData().getInt(SharedConstants.KEY_DIRECTION));
                     break;
                 default:
                     break;
             }
+        }
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        mReceiver = new WiFiDirectBroadcastReceiver(mManager, mChannel, this);
+        registerReceiver(mReceiver, mIntentFilter);
+    }
+
+    @Override
+    public void onPause() {
+        super.onPause();
+        unregisterReceiver(mReceiver);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (mRecorder != null) {
+            mRecorder.stopRecording();
         }
     }
 }
